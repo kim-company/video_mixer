@@ -77,8 +77,8 @@ defmodule VideoMixer.FrameQueue do
 
   def ready?(%__MODULE__{ready: %QexWithCount{count: count}}), do: count > 0
 
-  def closed?(%__MODULE__{stream_finished?: done, ready: ready}) do
-    QexWithCount.empty?(ready) and done
+  def closed?(%__MODULE__{stream_finished?: stream_finished?, ready: ready}) do
+    QexWithCount.empty?(ready) and stream_finished?
   end
 
   def pop!(state = %__MODULE__{ready: ready}) do
