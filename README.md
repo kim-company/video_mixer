@@ -3,19 +3,14 @@
 Mixes multiple video inputs to a single output using ffmpeg filters.
 
 ## Installation
-
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `video_mixer` to your list of dependencies in `mix.exs`:
-
 ```elixir
 def deps do
   [
-    {:video_mixer, "~> 0.1.0"}
+    {:video_mixer, github: "kim-company/video_mixer"}
   ]
 end
 ```
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/video_mixer>.
-
+## Copyright and License
+Copyright 2022, [KIM Keep In Mind GmbH](https://www.keepinmind.info/)
+Licensed under the [Apache License, Version 2.0](LICENSE)
