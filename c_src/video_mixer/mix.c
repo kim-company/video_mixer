@@ -208,16 +208,13 @@ static int init_filters(const char *filters, State *state)
     }
 
     // create inputs
+    char name[32];
     for (int i = state->inputs_count - 1; i >= 0; i--)
     {
         // input filter
         char args[512];
         snprintf(args, sizeof(args), "video_size=%dx%d:pix_fmt=%d:time_base=1/1",
                  state->in_ctx[i].width, state->in_ctx[i].height, state->in_ctx[i].pixel_format);
-
-        char *name;
-        // name memory needs to be freed
-        asprintf(&name, "%d:v", i);
 
         // initialize and fill the input[i]
         outputs[i] = avfilter_inout_alloc();
@@ -227,7 +224,6 @@ static int init_filters(const char *filters, State *state)
         if (!buffersrc)
         {
             return_code = AVERROR(ENOMEM);
-            free(name);
             goto exit_init_filter;
         }
         return_code = avfilter_graph_create_filter(&state->in_ctx[i].buffer_ctx, buffersrc, "in",
@@ -235,9 +231,10 @@ static int init_filters(const char *filters, State *state)
         if (return_code < 0)
         {
             av_log(NULL, AV_LOG_ERROR, "Cannot create buffer src nr. %d\n", i);
-            free(name);
             goto exit_init_filter;
         }
+
+        sprintf(name, "%d:v", i);
 
         outputs[i]->name = av_strdup(name);
         outputs[i]->filter_ctx = state->in_ctx[i].buffer_ctx;
@@ -247,8 +244,6 @@ static int init_filters(const char *filters, State *state)
 
         else
             outputs[i]->next = outputs[i + 1];
-
-        free(name);
     }
 
     // build the final graph with the given filters
