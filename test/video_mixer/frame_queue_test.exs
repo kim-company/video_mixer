@@ -25,6 +25,7 @@ defmodule VideoMixer.FrameQueueTest do
       %{frame: %Frame{size: 100}, spec: %Spec{accepted_frame_size: 100}, spec_changed?: true},
       %{frame: %Frame{size: 100}, spec: %Spec{accepted_frame_size: 100}, spec_changed?: false},
       %{frame: %Frame{size: 100}, spec: %Spec{accepted_frame_size: 100}, spec_changed?: false},
+      %{frame: %Frame{size: 200}, spec: %Spec{accepted_frame_size: 200}, spec_changed?: true},
       %{frame: %Frame{size: 300}, spec: %Spec{accepted_frame_size: 300}, spec_changed?: true},
       %{frame: %Frame{size: 200}, spec: %Spec{accepted_frame_size: 200}, spec_changed?: true},
       %{frame: %Frame{size: 300}, spec: %Spec{accepted_frame_size: 300}, spec_changed?: true},
@@ -37,8 +38,27 @@ defmodule VideoMixer.FrameQueueTest do
     # Assert its contents
     Enum.reduce(want, queue, fn want, queue ->
       {have, queue} = Queue.pop!(queue)
-      assert ^have = want
+
+      assert have.frame == want.frame
+      assert have.spec == want.spec
+      assert have.spec_changed? == want.spec_changed?
+
       queue
+    end)
+  end
+
+  test "does not allow pending frames to be left behind" do
+    queue = Queue.new(0)
+    input = [
+      %Frame{size: 100},
+      %Spec{accepted_frame_size: 200},
+      # This frame cannot become ready, the 100 one is still pending and will
+      # never exit that state.
+      %Frame{size: 200},
+    ]
+
+    assert_raise(VideoMixer.FrameQueue.ShadowingError, fn ->
+      Enum.reduce(input, queue, fn frame_or_spec, queue -> Queue.push(queue, frame_or_spec) end)
     end)
   end
 end

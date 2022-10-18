@@ -17,57 +17,70 @@ defmodule VideoMixer.FrameQueue do
     def empty?(_state), do: false
   end
 
+  defmodule ShadowingError do
+    defexception [:message]
+  end
+
   alias VideoMixer.Frame
   alias VideoMixer.FrameSpec
 
-  defstruct [:index, :current_frame_spec, :stream_finished?, :spec_changed?, :ready, :pending]
+  defstruct [:index, :current_spec, :known_specs, :stream_finished?, :spec_changed?, :ready, :pending, :needs_spec_before_next_frame]
 
   def new(index) do
     %__MODULE__{
       index: index,
-      current_frame_spec: nil,
       spec_changed?: false,
       stream_finished?: false,
+      # Erroneous condition in which a frame risks to be left behind in the
+      # pending queue.
+      needs_spec_before_next_frame: false,
+      
+      known_specs: [],
+      current_spec: nil,
       ready: QexWithCount.new(),
+      # Frames that do not find a matching Spec are stored in this buffer.
       pending: QexWithCount.new()
     }
   end
 
-  def push(state = %__MODULE__{pending: pending}, spec = %FrameSpec{}) do
-    state = %{state | spec_changed?: true, current_frame_spec: spec}
+  def push(state, spec = %FrameSpec{}) do
+    state = %{state | known_specs: [spec | state.known_specs]}
 
-    if QexWithCount.empty?(pending) do
+    if QexWithCount.empty?(state.pending) do
       state
     else
-      frames = Enum.into(pending.queue, [])
+      frames = Enum.into(state.pending.queue, [])
 
       pending_accepted? =
         frames
         |> Enum.map(fn x -> FrameSpec.compatible?(spec, x) end)
         |> Enum.all?()
 
-      if !pending_accepted? do
-        raise ArgumentError,
-              "frame queue received spec #{inspect(spec)} which is not compatible with the pending frame queue (size #{pending.count})"
+      if pending_accepted? do
+        state = %{state | spec_changed?: true, current_spec: spec, pending: QexWithCount.new(), needs_spec_before_next_frame: false}
+        Enum.reduce(frames, state, fn x, state -> push_compatible(state, spec, x) end)
+      else
+        %{state | needs_spec_before_next_frame: true}
       end
-
-      Enum.reduce(frames, state, fn x, state -> push(state, x) end)
     end
   end
 
-  def push(state = %__MODULE__{current_frame_spec: spec}, frame = %Frame{}) do
-    if spec == nil or !FrameSpec.compatible?(spec, frame) do
-      %{state | pending: QexWithCount.push(state.pending, frame)}
-    else
-      ready =
-        QexWithCount.push(state.ready, %{
-          index: state.index,
-          frame: frame,
-          spec: spec,
-          spec_changed?: state.spec_changed?
-        })
+  def push(state = %__MODULE__{needs_spec_before_next_frame: true}, frame = %Frame{}) do
+    raise ShadowingError, "frame #{inspect frame} pushed while ##{state.pending.count} pending frames are still waiting for a compatible spec"
+  end
 
-      %{state | ready: ready, spec_changed?: false}
+  def push(state = %__MODULE__{current_spec: spec}, frame = %Frame{}) do
+    if FrameSpec.compatible?(spec, frame) do
+      # Common Case
+      push_compatible(state, spec, frame)
+    else
+      spec = Enum.find(state.known_specs, &FrameSpec.compatible?(&1, frame))
+      if spec != nil do
+        state = %{state | spec_changed?: true, current_spec: spec}
+        push_compatible(state, spec, frame)
+      else
+        %{state | pending: QexWithCount.push(state.pending, frame)}
+      end
     end
   end
 
@@ -85,4 +98,17 @@ defmodule VideoMixer.FrameQueue do
     {value, ready} = QexWithCount.pop!(ready)
     {value, %{state | ready: ready}}
   end
+
+  defp push_compatible(state, spec, frame) do
+      ready =
+        QexWithCount.push(state.ready, %{
+          index: state.index,
+          frame: frame,
+          spec: spec,
+          spec_changed?: state.spec_changed?
+        })
+
+      %{state | ready: ready, spec_changed?: false}
+  end
+
 end
