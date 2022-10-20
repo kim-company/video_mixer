@@ -1,16 +1,20 @@
 defmodule VideoMixer.FrameQueue do
   defmodule QexWithCount do
-    defstruct queue: Qex.new(), count: 0
+    defstruct [:label, queue: Qex.new(), count: 0]
 
-    def new(), do: %__MODULE__{}
+    def new(label \\ :default), do: %__MODULE__{label: label }
 
-    def push(state = %__MODULE__{queue: queue, count: count}, item) do
-      %__MODULE__{state | queue: Qex.push(queue, item), count: count + 1}
+    def push(state = %__MODULE__{queue: queue, count: count, label: label}, item) do
+      count = count + 1
+      :telemetry.execute([:video_mixer, :frame_queue], %{count: count}, %{label: label})
+      %__MODULE__{state | queue: Qex.push(queue, item), count: count}
     end
 
-    def pop!(state = %__MODULE__{queue: queue, count: count}) do
+    def pop!(state = %__MODULE__{queue: queue, count: count, label: label}) do
       {item, queue} = Qex.pop!(queue)
-      {item, %__MODULE__{state | queue: queue, count: count - 1}}
+      count = count - 1
+      :telemetry.execute([:video_mixer, :frame_queue], %{count: count}, %{label: label})
+      {item, %__MODULE__{state | queue: queue, count: count}}
     end
 
     def empty?(%__MODULE__{count: 0}), do: true
@@ -37,9 +41,9 @@ defmodule VideoMixer.FrameQueue do
       
       known_specs: [],
       current_spec: nil,
-      ready: QexWithCount.new(),
+      ready: QexWithCount.new(:ready),
       # Frames that do not find a matching Spec are stored in this buffer.
-      pending: QexWithCount.new()
+      pending: QexWithCount.new(:pending)
     }
   end
 
@@ -57,7 +61,7 @@ defmodule VideoMixer.FrameQueue do
         |> Enum.all?()
 
       if pending_accepted? do
-        state = %{state | spec_changed?: true, current_spec: spec, pending: QexWithCount.new(), needs_spec_before_next_frame: false}
+        state = %{state | spec_changed?: true, current_spec: spec, pending: QexWithCount.new(:pending), needs_spec_before_next_frame: false}
         Enum.reduce(frames, state, fn x, state -> push_compatible(state, spec, x) end)
       else
         %{state | needs_spec_before_next_frame: true}

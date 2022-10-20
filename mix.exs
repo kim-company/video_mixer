@@ -23,7 +23,8 @@ defmodule VideoMixer.MixProject do
   defp deps do
     [
       {:unifex, "~> 1.0"},
-      {:qex, "~> 0.5.1"}
+      {:qex, "~> 0.5.1"},
+      {:telemetry, "~> 1.1"}
     ]
   end
 end
