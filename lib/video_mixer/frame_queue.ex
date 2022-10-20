@@ -41,10 +41,18 @@ defmodule VideoMixer.FrameQueue do
       
       known_specs: [],
       current_spec: nil,
-      ready: QexWithCount.new(:ready),
+      ready: new_ready_queue(index),
       # Frames that do not find a matching Spec are stored in this buffer.
-      pending: QexWithCount.new(:pending)
+      pending: new_pending_queue(index)
     }
+  end
+
+  def new_pending_queue(index) do
+    QexWithCount.new("pending-" <> to_string(index))
+  end
+
+  def new_ready_queue(index) do
+    QexWithCount.new("ready-" <> to_string(index))
   end
 
   def push(state, spec = %FrameSpec{}) do
@@ -61,7 +69,7 @@ defmodule VideoMixer.FrameQueue do
         |> Enum.all?()
 
       if pending_accepted? do
-        state = %{state | spec_changed?: true, current_spec: spec, pending: QexWithCount.new(:pending), needs_spec_before_next_frame: false}
+        state = %{state | spec_changed?: true, current_spec: spec, pending: new_pending_queue(state.index), needs_spec_before_next_frame: false}
         Enum.reduce(frames, state, fn x, state -> push_compatible(state, spec, x) end)
       else
         %{state | needs_spec_before_next_frame: true}
