@@ -90,6 +90,9 @@ defmodule VideoMixer.FrameQueue do
 
   def ready?(%__MODULE__{ready: %QexWithCount{count: count}}), do: count > 0
 
+  @doc "Returns the size of the ready queue"
+  def size(%__MODULE__{ready: %QexWithCount{count: count}}), do: count
+
   def closed?(%__MODULE__{stream_finished?: stream_finished?, ready: ready}) do
     QexWithCount.empty?(ready) and stream_finished?
   end
