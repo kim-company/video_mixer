@@ -126,10 +126,6 @@ defmodule VideoMixer.FrameQueue do
     QexWithCount.empty?(ready) and stream_finished?
   end
 
-  def stream_finished?(%__MODULE__{stream_finished?: stream_finished?}) do
-    stream_finished?
-  end
-
   def pop!(state = %__MODULE__{ready: ready}) do
     {value, ready} = QexWithCount.pop!(ready)
     {value, %{state | ready: ready}}
