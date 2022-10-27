@@ -1,26 +1,4 @@
 defmodule VideoMixer.FrameQueue do
-  defmodule QexWithCount do
-    defstruct [:label, queue: Qex.new(), count: 0]
-
-    def new(label \\ :default), do: %__MODULE__{label: label}
-
-    def push(state = %__MODULE__{queue: queue, count: count, label: label}, item) do
-      count = count + 1
-      :telemetry.execute([:video_mixer, :frame_queue], %{count: count}, %{label: label})
-      %__MODULE__{state | queue: Qex.push(queue, item), count: count}
-    end
-
-    def pop!(state = %__MODULE__{queue: queue, count: count, label: label}) do
-      {item, queue} = Qex.pop!(queue)
-      count = count - 1
-      :telemetry.execute([:video_mixer, :frame_queue], %{count: count}, %{label: label})
-      {item, %__MODULE__{state | queue: queue, count: count}}
-    end
-
-    def empty?(%__MODULE__{count: 0}), do: true
-    def empty?(_state), do: false
-  end
-
   defmodule ShadowingError do
     defexception [:message]
   end
@@ -34,6 +12,7 @@ defmodule VideoMixer.FrameQueue do
     :known_specs,
     :stream_finished?,
     :spec_changed?,
+    :received_first_frame?,
     :ready,
     :pending,
     :needs_spec_before_next_frame
@@ -44,6 +23,7 @@ defmodule VideoMixer.FrameQueue do
       index: index,
       spec_changed?: false,
       stream_finished?: false,
+      received_first_frame?: false,
       # Erroneous condition in which a frame risks to be left behind in the
       # pending queue.
       needs_spec_before_next_frame: false,
@@ -56,17 +36,17 @@ defmodule VideoMixer.FrameQueue do
   end
 
   def new_pending_queue(index) do
-    QexWithCount.new("pending-" <> to_string(index))
+    Q.new("pending-" <> to_string(index))
   end
 
   def new_ready_queue(index) do
-    QexWithCount.new("ready-" <> to_string(index))
+    Q.new("ready-" <> to_string(index))
   end
 
   def push(state, spec = %FrameSpec{}) do
     state = %{state | known_specs: [spec | state.known_specs]}
 
-    if QexWithCount.empty?(state.pending) do
+    if Q.empty?(state.pending) do
       state
     else
       frames = Enum.into(state.pending.queue, [])
@@ -108,7 +88,7 @@ defmodule VideoMixer.FrameQueue do
         state = %{state | spec_changed?: true, current_spec: spec}
         push_compatible(state, spec, frame)
       else
-        %{state | pending: QexWithCount.push(state.pending, frame)}
+        %{state | pending: Q.push(state.pending, frame)}
       end
     end
   end
@@ -117,29 +97,31 @@ defmodule VideoMixer.FrameQueue do
     %{state | stream_finished?: true}
   end
 
-  def ready?(%__MODULE__{ready: %QexWithCount{count: count}}), do: count > 0
+  def ready?(%__MODULE__{received_first_frame?: value}), do: value
+
+  def any?(%__MODULE__{ready: %Q{count: count}}), do: count > 0
 
   @doc "Returns the size of the ready queue"
-  def size(%__MODULE__{ready: %QexWithCount{count: count}}), do: count
+  def size(%__MODULE__{ready: %Q{count: count}}), do: count
 
   def closed?(%__MODULE__{stream_finished?: stream_finished?, ready: ready}) do
-    QexWithCount.empty?(ready) and stream_finished?
+    Q.empty?(ready) and stream_finished?
   end
 
   def pop!(state = %__MODULE__{ready: ready}) do
-    {value, ready} = QexWithCount.pop!(ready)
+    {value, ready} = Q.pop!(ready)
     {value, %{state | ready: ready}}
   end
 
   defp push_compatible(state, spec, frame) do
     ready =
-      QexWithCount.push(state.ready, %{
+      Q.push(state.ready, %{
         index: state.index,
         frame: frame,
         spec: spec,
         spec_changed?: state.spec_changed?
       })
 
-    %{state | ready: ready, spec_changed?: false}
+    %{state | ready: ready, spec_changed?: false, received_first_frame?: true}
   end
 end

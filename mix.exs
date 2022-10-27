@@ -24,7 +24,8 @@ defmodule VideoMixer.MixProject do
     [
       {:unifex, "~> 1.0"},
       {:qex, "~> 0.5.1"},
-      {:telemetry, "~> 1.1"}
+      {:telemetry, "~> 1.1"},
+      {:kim_q, github: "kim-company/kim_q"}
     ]
   end
 end
