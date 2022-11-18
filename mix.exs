@@ -1,14 +1,20 @@
 defmodule VideoMixer.MixProject do
   use Mix.Project
 
+  @version "1.0.0"
+  @link "https://github.com/kim-company/video_mixer"
+
   def project do
     [
       app: :video_mixer,
-      version: "0.1.0",
+      version: @version,
+      source_url: @link,
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       compilers: [:unifex, :bundlex] ++ Mix.compilers(),
-      deps: deps()
+      deps: deps(),
+      package: package(),
+      description: "Mixes multiple video inputs to a single output using ffmpeg filters."
     ]
   end
 
@@ -25,7 +31,15 @@ defmodule VideoMixer.MixProject do
       {:unifex, "~> 1.0"},
       {:qex, "~> 0.5.1"},
       {:telemetry, "~> 1.1"},
-      {:kim_q, github: "kim-company/kim_q"}
+      {:kim_q, "~> 1.0.0"}
+    ]
+  end
+
+  defp package do
+    [
+      maintainers: ["KIM Keep In Mind"],
+      licenses: ["Apache-2.0"],
+      links: %{"GitHub" => @link}
     ]
   end
 end

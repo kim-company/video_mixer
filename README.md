@@ -6,7 +6,7 @@ Mixes multiple video inputs to a single output using ffmpeg filters.
 ```elixir
 def deps do
   [
-    {:video_mixer, github: "kim-company/video_mixer"}
+    {:video_mixer, "~> 1.0.0"}
   ]
 end
 ```
