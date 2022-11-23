@@ -1,7 +1,7 @@
 defmodule VideoMixer.MixProject do
   use Mix.Project
 
-  @version "1.0.0"
+  @version "1.0.1"
   @link "https://github.com/kim-company/video_mixer"
 
   def project do
@@ -39,7 +39,16 @@ defmodule VideoMixer.MixProject do
     [
       maintainers: ["KIM Keep In Mind"],
       licenses: ["Apache-2.0"],
-      links: %{"GitHub" => @link}
+      links: %{"GitHub" => @link},
+      files: [
+        "lib",
+        "c_src",
+        "mix.exs",
+        "README*",
+        "LICENSE*",
+        ".formatter.exs",
+        "bundlex.exs"
+      ]
     ]
   end
 end
