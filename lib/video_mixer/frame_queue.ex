@@ -18,12 +18,12 @@ defmodule VideoMixer.FrameQueue do
     :needs_spec_before_next_frame
   ]
 
-  def new(index) do
+  def new(index, ready? \\ false) do
     %__MODULE__{
       index: index,
       spec_changed?: false,
       stream_finished?: false,
-      received_first_frame?: false,
+      received_first_frame?: ready?,
       # Erroneous condition in which a frame risks to be left behind in the
       # pending queue.
       needs_spec_before_next_frame: false,
