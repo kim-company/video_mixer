@@ -7,6 +7,9 @@ UNIFEX_TERM init(UnifexEnv *env, int *width, unsigned int width_length, int *hei
 {
     UNIFEX_TERM result;
     State *state = unifex_alloc_state(env);
+    if (!state)
+        return init_result_error(env, "error_allocating_state");
+    memset(state, 0, sizeof(State));
 
     // check if all arrays have the same length
     int inputs_count = width_length;
@@ -18,6 +21,11 @@ UNIFEX_TERM init(UnifexEnv *env, int *width, unsigned int width_length, int *hei
 
     state->inputs_count = inputs_count;
     state->in_ctx = (InOutCtx *)unifex_alloc(inputs_count * sizeof(InOutCtx)); // needs to be freed
+    if (!state->in_ctx)
+    {
+        result = init_result_error(env, "error_allocating_state");
+        goto exit_create;
+    }
 
     // initialize all the input configs
     for (int i = 0; i < inputs_count; i++)
@@ -89,6 +97,19 @@ UNIFEX_TERM mix(UnifexEnv *env, UnifexPayload **payload, uint32_t buffers_length
         frame[i]->format = state->in_ctx[i].pixel_format;
         frame[i]->width = state->in_ctx[i].width;
         frame[i]->height = state->in_ctx[i].height;
+
+        int expected_size = av_image_get_buffer_size(frame[i]->format, frame[i]->width, frame[i]->height, 1);
+        if (expected_size < 0)
+        {
+            result = mix_result_error(env, "error_calculating_buffer_size");
+            goto exit_filter;
+        }
+        if (payload[i]->size < (unsigned int)expected_size)
+        {
+            result = mix_result_error(env, "input_payload_size_mismatch");
+            goto exit_filter;
+        }
+
         return_code = av_image_fill_arrays(frame[i]->data, frame[i]->linesize, payload[i]->data,
                                            frame[i]->format, frame[i]->width, frame[i]->height, 1);
         if (return_code < 0)
@@ -147,6 +168,8 @@ exit_filter:
 
 static int get_pixel_format(char *fmt_name)
 {
+    if (fmt_name == NULL)
+        return -1;
     int pix_fmt = -1;
     if (strcmp(fmt_name, "I420") == 0)
     {
@@ -176,19 +199,19 @@ static int init_filters(const char *filters, State *state)
     const AVFilter *buffersink = avfilter_get_by_name("buffersink");
     AVFilterInOut *inputs = avfilter_inout_alloc();
 
-    // initialize the buffersink
-    return_code = avfilter_graph_create_filter(&state->out_ctx.buffer_ctx, buffersink, "out",
-                                               NULL, NULL, state->filter_graph);
-    if (return_code < 0)
+    // allocate the buffersink so non-runtime options can be set before init
+    state->out_ctx.buffer_ctx = avfilter_graph_alloc_filter(state->filter_graph, buffersink, "out");
+    if (!state->out_ctx.buffer_ctx)
     {
-        av_log(NULL, AV_LOG_ERROR, "Cannot create buffer sink\n");
+        av_log(NULL, AV_LOG_ERROR, "Cannot allocate buffer sink\n");
+        return_code = AVERROR(ENOMEM);
         goto exit_init_filter;
     }
 
-    // set pixel format
+    // set pixel format before initializing the filter
     return_code = av_opt_set_array(
         state->out_ctx.buffer_ctx,
-        "pix_fmts",
+        "pixel_formats",
         AV_OPT_SEARCH_CHILDREN,
         0,
         1,
@@ -197,6 +220,13 @@ static int init_filters(const char *filters, State *state)
     if (return_code < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "Cannot set output pixel format\n");
+        goto exit_init_filter;
+    }
+
+    return_code = avfilter_init_str(state->out_ctx.buffer_ctx, NULL);
+    if (return_code < 0)
+    {
+        av_log(NULL, AV_LOG_ERROR, "Cannot initialize buffer sink\n");
         goto exit_init_filter;
     }
 

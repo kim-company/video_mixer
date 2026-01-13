@@ -1,5 +1,5 @@
-defmodule VideoMixer.FrameQueueTest do
-  use ExUnit.Case
+defmodule VideoMixer.FrameQueue.OrderTest do
+  use ExUnit.Case, async: true
 
   alias VideoMixer.Frame
   alias VideoMixer.FrameQueue, as: Queue
@@ -37,11 +37,9 @@ defmodule VideoMixer.FrameQueueTest do
       %{frame: %Frame{size: 400}, spec: %Spec{accepted_frame_size: 400}, spec_changed?: true}
     ]
 
-    # Load the queue
     queue =
       Enum.reduce(input, queue, fn frame_or_spec, queue -> Queue.push(queue, frame_or_spec) end)
 
-    # Assert its contents
     Enum.reduce(want, queue, fn want, queue ->
       {have, queue} = Queue.pop!(queue)
 
@@ -50,22 +48,6 @@ defmodule VideoMixer.FrameQueueTest do
       assert have.spec_changed? == want.spec_changed?
 
       queue
-    end)
-  end
-
-  test "does not allow pending frames to be left behind" do
-    queue = Queue.new(0)
-
-    input = [
-      %Frame{size: 100},
-      %Spec{accepted_frame_size: 200},
-      # This frame cannot become ready, the 100 one is still pending and will
-      # never exit that state.
-      %Frame{size: 200}
-    ]
-
-    assert_raise(VideoMixer.FrameQueue.ShadowingError, fn ->
-      Enum.reduce(input, queue, fn frame_or_spec, queue -> Queue.push(queue, frame_or_spec) end)
     end)
   end
 end

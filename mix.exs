@@ -1,7 +1,7 @@
 defmodule VideoMixer.MixProject do
   use Mix.Project
 
-  @version "1.0.1"
+  @version "2.0.0"
   @link "https://github.com/kim-company/video_mixer"
 
   def project do
@@ -29,9 +29,7 @@ defmodule VideoMixer.MixProject do
   defp deps do
     [
       {:unifex, "~> 1.0"},
-      {:qex, "~> 0.5.1"},
-      {:telemetry, "~> 1.1"},
-      {:kim_q, "~> 1.0.0"}
+      {:telemetry, "~> 1.1"}
     ]
   end
 

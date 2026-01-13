@@ -1,4 +1,6 @@
 defmodule VideoMixer do
+  alias VideoMixer.Error
+  alias VideoMixer.FilterGraph
   alias VideoMixer.Native
   alias VideoMixer.FrameSpec
   alias VideoMixer.Frame
@@ -15,52 +17,89 @@ defmodule VideoMixer do
   # Specifies the expected FrameSpec of each Frame the mixer is going to
   # receive.
   @type spec_mapping_t :: [FrameSpec.t()]
+  @type input_name :: atom()
+  @type input_def :: %{name: input_name(), spec: FrameSpec.t()}
 
-  @type t :: %__MODULE__{mapping: spec_mapping_t(), ref: reference()}
-  defstruct [:mapping, :ref, :filter_indexes]
+  @type t :: %__MODULE__{
+          mapping: spec_mapping_t(),
+          ref: reference(),
+          filter_indexes: [non_neg_integer()],
+          input_order: [input_name()]
+        }
+  defstruct [:mapping, :ref, :filter_indexes, :input_order]
 
   @doc """
-  Initializes the mixer. `mapping` frames must be numbered from 0 to
-  length(mapping)-1. Ordering is not important.
+  Initializes the mixer using a constrained layout with safe defaults.
   """
-  @spec init(filter_graph_t(), spec_mapping_t(), FrameSpec.t()) :: {:ok, t()} | {:error, any}
-  def init({filter_graph, filter_indexes}, mapping, output_frame_spec) do
-    [widths, heights, formats] =
-      mapping
-      |> Enum.with_index()
-      |> Enum.filter(fn {_x, index} -> Enum.member?(filter_indexes, index) end)
-      |> Enum.map(fn {x, _index} -> x end)
-      |> Enum.map(fn %FrameSpec{width: w, height: h, pixel_format: f} -> [w, h, f] end)
-      |> Enum.zip()
-      |> Enum.map(fn x -> Tuple.to_list(x) end)
-
-    %FrameSpec{width: out_width, height: out_height, pixel_format: out_format} = output_frame_spec
-
-    case Native.init(widths, heights, formats, filter_graph, out_width, out_height, out_format) do
-      {:ok, ref} ->
-        {:ok, %__MODULE__{ref: ref, mapping: mapping, filter_indexes: filter_indexes}}
-
-      {:error, reason} ->
-        {:error, reason}
+  @spec init(FilterGraph.layout(), [input_def()], FrameSpec.t(), keyword()) ::
+          {:ok, t()} | {:error, Error.t()}
+  def init(layout, inputs, output_frame_spec, opts \\ []) do
+    with {:ok, %{graph: filter_graph, filter_indexes: filter_indexes, input_order: input_order,
+                mapping: mapping}} <-
+           FilterGraph.build(layout, inputs, output_frame_spec, opts) do
+      init_raw({filter_graph, filter_indexes}, mapping, input_order, output_frame_spec)
     end
   end
 
-  @spec mix(t(), [Frame.t()]) :: {:ok, binary()} | {:error, any()}
-  def mix(%__MODULE__{ref: ref, mapping: mapping, filter_indexes: filter_indexes}, frames) do
-    with :ok <- assert_spec_compatibility(mapping, frames, 0) do
+  @doc """
+  Initializes the mixer with a custom filter graph.
+  """
+  @spec init_raw(filter_graph_t(), spec_mapping_t(), [input_name()], FrameSpec.t()) ::
+          {:ok, t()} | {:error, Error.t()}
+  def init_raw({filter_graph, filter_indexes}, mapping, input_order, output_frame_spec) do
+    with :ok <- validate_filter_indexes(filter_indexes, mapping) do
+      [widths, heights, formats] =
+        filter_indexes
+        |> Enum.map(&Enum.at(mapping, &1))
+        |> Enum.map(fn %FrameSpec{width: w, height: h, pixel_format: f} -> [w, h, f] end)
+        |> Enum.zip()
+        |> Enum.map(fn x -> Tuple.to_list(x) end)
+
+      %FrameSpec{width: out_width, height: out_height, pixel_format: out_format} =
+        output_frame_spec
+
+      case Native.init(widths, heights, formats, filter_graph, out_width, out_height, out_format) do
+        {:ok, ref} ->
+          {:ok,
+           %__MODULE__{
+             ref: ref,
+             mapping: mapping,
+             filter_indexes: filter_indexes,
+             input_order: input_order
+           }}
+
+        {:error, reason} ->
+          {:error, Error.new(:native_init, reason)}
+      end
+    end
+  end
+
+  @spec mix(t(), keyword(Frame.t()) | map()) :: {:ok, binary()} | {:error, Error.t()}
+  def mix(%__MODULE__{ref: ref, mapping: mapping, filter_indexes: filter_indexes,
+                      input_order: input_order}, frames_by_name) do
+    with {:ok, frames} <- normalize_frames(frames_by_name, input_order),
+         :ok <- assert_spec_compatibility(mapping, frames, 0) do
       frames
       |> Enum.with_index()
       |> Enum.filter(fn {_frame, index} -> Enum.member?(filter_indexes, index) end)
       |> Enum.map(fn {frame, _index} -> frame end)
       |> Enum.map(fn %Frame{data: x} -> x end)
       |> Native.mix(ref)
+      |> case do
+        {:ok, result} -> {:ok, result}
+        {:error, reason} -> {:error, Error.new(:native_mix, reason)}
+      end
     end
   end
 
   defp assert_spec_compatibility([], [], _), do: :ok
 
   defp assert_spec_compatibility(specs, frames, _) when length(specs) != length(frames) do
-    {:error, "mixer needs ##{length(specs)} frames for mixing, got ##{length(frames)}"}
+    {:error,
+     Error.new(:mix_input_validation, :frame_count_mismatch, %{
+       expected: length(specs),
+       got: length(frames)
+     })}
   end
 
   defp assert_spec_compatibility([spec | spec_rest], [frame | frame_rest], index) do
@@ -68,7 +107,66 @@ defmodule VideoMixer do
       assert_spec_compatibility(spec_rest, frame_rest, index + 1)
     else
       {:error,
-       "frame with index #{index} and size #{frame.size} is incompatible with spec #{inspect(spec)}"}
+       Error.new(:mix_input_validation, :frame_spec_mismatch, %{
+         index: index,
+         frame_size: frame.size,
+         spec: spec
+       })}
+    end
+  end
+
+  defp normalize_frames(frames_by_name, input_order) when is_map(frames_by_name) do
+    keys = Map.keys(frames_by_name)
+    normalize_frame_keys(frames_by_name, input_order, keys)
+  end
+
+  defp normalize_frames(frames_by_name, input_order) when is_list(frames_by_name) do
+    if Keyword.keyword?(frames_by_name) do
+      keys = Keyword.keys(frames_by_name)
+
+      if length(keys) != length(Enum.uniq(keys)) do
+        {:error, Error.new(:mix_input_validation, :duplicate_inputs, %{inputs: keys})}
+      else
+        frames_by_name
+        |> Map.new()
+        |> normalize_frame_keys(input_order, keys)
+      end
+    else
+      {:error, Error.new(:mix_input_validation, :invalid_inputs)}
+    end
+  end
+
+  defp normalize_frames(_frames_by_name, _input_order) do
+    {:error, Error.new(:mix_input_validation, :invalid_inputs)}
+  end
+
+  defp normalize_frame_keys(frames_by_name, input_order, keys) do
+    missing = input_order -- keys
+    extra = keys -- input_order
+
+    cond do
+      missing != [] ->
+        {:error, Error.new(:mix_input_validation, :missing_inputs, %{missing: missing})}
+
+      extra != [] ->
+        {:error, Error.new(:mix_input_validation, :unexpected_inputs, %{unexpected: extra})}
+
+      true ->
+        {:ok, Enum.map(input_order, &Map.fetch!(frames_by_name, &1))}
+    end
+  end
+
+  defp validate_filter_indexes(filter_indexes, mapping) do
+    max_index = length(mapping) - 1
+
+    if Enum.all?(filter_indexes, &(&1 in 0..max_index)) do
+      :ok
+    else
+      {:error,
+       Error.new(:mix_input_validation, :invalid_filter_indexes, %{
+         filter_indexes: filter_indexes,
+         mapping_size: length(mapping)
+       })}
     end
   end
 end

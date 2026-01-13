@@ -1,7 +1,5 @@
 defmodule VideoMixer.FrameQueue do
-  defmodule ShadowingError do
-    defexception [:message]
-  end
+  alias VideoMixer.Error
 
   alias VideoMixer.Frame
   alias VideoMixer.FrameSpec
@@ -35,21 +33,21 @@ defmodule VideoMixer.FrameQueue do
     }
   end
 
-  def new_pending_queue(index) do
-    Q.new("pending-" <> to_string(index))
+  def new_pending_queue(_index) do
+    :queue.new()
   end
 
-  def new_ready_queue(index) do
-    Q.new("ready-" <> to_string(index))
+  def new_ready_queue(_index) do
+    :queue.new()
   end
 
   def push(state, spec = %FrameSpec{}) do
     state = %{state | known_specs: [spec | state.known_specs]}
 
-    if Q.empty?(state.pending) do
+    if :queue.is_empty(state.pending) do
       state
     else
-      frames = Enum.into(state.pending.queue, [])
+      frames = :queue.to_list(state.pending)
 
       pending_accepted? =
         frames
@@ -73,8 +71,13 @@ defmodule VideoMixer.FrameQueue do
   end
 
   def push(state = %__MODULE__{needs_spec_before_next_frame: true}, frame = %Frame{}) do
-    raise ShadowingError,
-          "frame #{inspect(frame)} pushed while ##{state.pending.count} pending frames are still waiting for a compatible spec"
+    raise Error,
+          context: :frame_queue_shadowing,
+          reason: :pending_frames_left_behind,
+          details: %{
+            pending_count: :queue.len(state.pending),
+            frame: frame
+          }
   end
 
   def push(state = %__MODULE__{current_spec: spec}, frame = %Frame{}) do
@@ -88,7 +91,7 @@ defmodule VideoMixer.FrameQueue do
         state = %{state | spec_changed?: true, current_spec: spec}
         push_compatible(state, spec, frame)
       else
-        %{state | pending: Q.push(state.pending, frame)}
+        %{state | pending: :queue.in(frame, state.pending)}
       end
     end
   end
@@ -99,28 +102,36 @@ defmodule VideoMixer.FrameQueue do
 
   def ready?(%__MODULE__{received_first_frame?: value}), do: value
 
-  def any?(%__MODULE__{ready: %Q{count: count}}), do: count > 0
+  def any?(%__MODULE__{ready: ready}), do: :queue.len(ready) > 0
 
   @doc "Returns the size of the ready queue"
-  def size(%__MODULE__{ready: %Q{count: count}}), do: count
+  def size(%__MODULE__{ready: ready}), do: :queue.len(ready)
 
   def closed?(%__MODULE__{stream_finished?: stream_finished?, ready: ready}) do
-    Q.empty?(ready) and stream_finished?
+    :queue.is_empty(ready) and stream_finished?
   end
 
   def pop!(state = %__MODULE__{ready: ready}) do
-    {value, ready} = Q.pop!(ready)
-    {value, %{state | ready: ready}}
+    case :queue.out(ready) do
+      {{:value, value}, ready} ->
+        {value, %{state | ready: ready}}
+
+      {:empty, _ready} ->
+        raise Error,
+              context: :frame_queue_empty,
+              reason: :empty_ready_queue,
+              details: %{index: state.index}
+    end
   end
 
   defp push_compatible(state, spec, frame) do
     ready =
-      Q.push(state.ready, %{
+      :queue.in(%{
         index: state.index,
         frame: frame,
         spec: spec,
         spec_changed?: state.spec_changed?
-      })
+      }, state.ready)
 
     %{state | ready: ready, spec_changed?: false, received_first_frame?: true}
   end

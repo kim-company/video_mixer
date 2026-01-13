@@ -7,6 +7,7 @@
 #include <libavutil/parseutils.h>
 #include <libavutil/version.h>
 #include <stdio.h>
+#include <string.h>
 
 #if LIBAVUTIL_VERSION_MAJOR < 58
 #error "video_mixer requires ffmpeg >= 6.0 (libavutil >= 58)"
