@@ -13,11 +13,18 @@ defmodule VideoMixer.BundlexProject do
         sources: ["mix.c"],
         interface: :nif,
         preprocessor: Unifex,
+        linker_flags: linker_flags(),
         os_deps: [
-          libavutil: :pkg_config,
           libavfilter: :pkg_config
         ]
       ]
     ]
+  end
+
+  defp linker_flags do
+    case :os.type() do
+      {:unix, :darwin} -> ["-Wl,-no_warn_duplicate_libraries"]
+      _ -> []
+    end
   end
 end

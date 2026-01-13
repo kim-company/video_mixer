@@ -5,7 +5,12 @@
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
 #include <libavutil/parseutils.h>
+#include <libavutil/version.h>
 #include <stdio.h>
+
+#if LIBAVUTIL_VERSION_MAJOR < 58
+#error "video_mixer requires ffmpeg >= 6.0 (libavutil >= 58)"
+#endif
 
 typedef struct InOutCtx
 {
