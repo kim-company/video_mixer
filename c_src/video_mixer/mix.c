@@ -166,7 +166,7 @@ static int init_filters(const char *filters, State *state)
 {
     // allocations
     int return_code;
-    enum AVPixelFormat out_pix_fmts[] = {state->out_ctx.pixel_format, AV_PIX_FMT_NONE};
+    enum AVPixelFormat out_pix_fmts[] = {state->out_ctx.pixel_format};
     AVFilterInOut **outputs = av_calloc(state->inputs_count, sizeof(AVFilterInOut));
 
     // init the graph
@@ -186,8 +186,14 @@ static int init_filters(const char *filters, State *state)
     }
 
     // set pixel format
-    return_code = av_opt_set_int_list(state->out_ctx.buffer_ctx, "pix_fmts", out_pix_fmts,
-                                      AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
+    return_code = av_opt_set_array(
+        state->out_ctx.buffer_ctx,
+        "pix_fmts",
+        AV_OPT_SEARCH_CHILDREN,
+        0,
+        1,
+        AV_OPT_TYPE_PIXEL_FMT,
+        out_pix_fmts);
     if (return_code < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "Cannot set output pixel format\n");

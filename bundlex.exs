@@ -13,7 +13,10 @@ defmodule VideoMixer.BundlexProject do
         sources: ["mix.c"],
         interface: :nif,
         preprocessor: Unifex,
-        pkg_configs: ["libavutil", "libavfilter"]
+        os_deps: [
+          libavutil: :pkg_config,
+          libavfilter: :pkg_config
+        ]
       ]
     ]
   end
