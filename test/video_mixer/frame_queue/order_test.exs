@@ -6,7 +6,7 @@ defmodule VideoMixer.FrameQueue.OrderTest do
   alias VideoMixer.FrameSpec, as: Spec
 
   test "handles frame-spec pairs delivered out-of-order" do
-    queue = Queue.new(0)
+    queue = Queue.new()
 
     input = [
       %Frame{size: 100},

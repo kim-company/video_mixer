@@ -6,7 +6,7 @@ defmodule VideoMixer.FrameQueue.StateTest do
   alias VideoMixer.FrameSpec
 
   test "reports readiness and size as frames arrive" do
-    queue = Queue.new(0)
+    queue = Queue.new()
 
     refute Queue.ready?(queue)
     refute Queue.any?(queue)
@@ -31,7 +31,7 @@ defmodule VideoMixer.FrameQueue.StateTest do
   end
 
   test "closes when end_of_stream arrives with no ready frames" do
-    queue = Queue.new(0)
+    queue = Queue.new()
     queue = Queue.push(queue, :end_of_stream)
 
     assert Queue.closed?(queue)

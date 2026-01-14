@@ -41,6 +41,20 @@ Use these role keys for both specs and frames:
 - `:xstack` → `top_left`, `top_right`, `bottom_left`, `bottom_right`
 - `:primary_sidebar` → `primary`, `sidebar`
 
+### Custom Filter Graphs
+You can bypass the layout generator and provide your own filter graph string
+with `init_raw/4`. This is useful for advanced ffmpeg graphs or nonstandard
+layouts.
+
+```elixir
+filter_graph = {"[0:v]null[out]", [0]}
+input_order = [:primary]
+
+{:ok, mixer} = VideoMixer.init_raw(filter_graph, [primary_spec], input_order, out_spec)
+
+{:ok, output} = VideoMixer.mix(mixer, primary: primary_frame)
+```
+
 ### Layout Options
 - `pixel_format` (defaults to `:I420`)
 

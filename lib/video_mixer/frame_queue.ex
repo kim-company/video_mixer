@@ -5,7 +5,6 @@ defmodule VideoMixer.FrameQueue do
   alias VideoMixer.FrameSpec
 
   defstruct [
-    :index,
     :current_spec,
     :known_specs,
     :stream_finished?,
@@ -16,9 +15,8 @@ defmodule VideoMixer.FrameQueue do
     :needs_spec_before_next_frame
   ]
 
-  def new(index) do
+  def new do
     %__MODULE__{
-      index: index,
       spec_changed?: false,
       stream_finished?: false,
       received_first_frame?: false,
@@ -27,18 +25,10 @@ defmodule VideoMixer.FrameQueue do
       needs_spec_before_next_frame: false,
       known_specs: [],
       current_spec: nil,
-      ready: new_ready_queue(index),
+      ready: :queue.new(),
       # Frames that do not find a matching Spec are stored in this buffer.
-      pending: new_pending_queue(index)
+      pending: :queue.new()
     }
-  end
-
-  def new_pending_queue(_index) do
-    :queue.new()
-  end
-
-  def new_ready_queue(_index) do
-    :queue.new()
   end
 
   def push(state, spec = %FrameSpec{}) do
@@ -59,7 +49,7 @@ defmodule VideoMixer.FrameQueue do
           state
           | spec_changed?: true,
             current_spec: spec,
-            pending: new_pending_queue(state.index),
+            pending: :queue.new(),
             needs_spec_before_next_frame: false
         }
 
@@ -119,15 +109,13 @@ defmodule VideoMixer.FrameQueue do
       {:empty, _ready} ->
         raise Error,
               context: :frame_queue_empty,
-              reason: :empty_ready_queue,
-              details: %{index: state.index}
+              reason: :empty_ready_queue
     end
   end
 
   defp push_compatible(state, spec, frame) do
     ready =
       :queue.in(%{
-        index: state.index,
         frame: frame,
         spec: spec,
         spec_changed?: state.spec_changed?

@@ -213,4 +213,23 @@ defmodule VideoMixer.NativeIntegrationTest do
     assert {:error, %Error{context: :native_mix, reason: :input_payload_size_mismatch}} =
              VideoMixer.mix(mixer, primary: frame)
   end
+
+  test "mixes with a custom filter graph via init_raw" do
+    filter_graph = {"[0:v]null[out]", [0]}
+    input_order = [:primary]
+
+    spec = %FrameSpec{
+      width: 2,
+      height: 2,
+      pixel_format: :I420,
+      accepted_frame_size: 6
+    }
+
+    assert {:ok, mixer} = VideoMixer.init_raw(filter_graph, [spec], input_order, spec)
+
+    frame = i420_frame(2, 2, 10, 20, 30)
+
+    assert {:ok, output} = VideoMixer.mix(mixer, primary: frame)
+    assert byte_size(output) == 6
+  end
 end

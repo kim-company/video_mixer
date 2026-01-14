@@ -7,7 +7,7 @@ defmodule VideoMixer.FrameQueue.ErrorTest do
   alias VideoMixer.FrameSpec, as: Spec
 
   test "raises when pending frames would be left behind" do
-    queue = Queue.new(0)
+    queue = Queue.new()
 
     input = [
       %Frame{size: 100},
@@ -26,12 +26,11 @@ defmodule VideoMixer.FrameQueue.ErrorTest do
   end
 
   test "raises when popping from an empty queue" do
-    queue = Queue.new(123)
+    queue = Queue.new()
 
     error = assert_raise Error, fn -> Queue.pop!(queue) end
 
     assert error.context == :frame_queue_empty
     assert error.reason == :empty_ready_queue
-    assert error.details.index == 123
   end
 end
