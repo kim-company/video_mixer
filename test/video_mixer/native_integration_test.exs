@@ -36,13 +36,13 @@ defmodule VideoMixer.NativeIntegrationTest do
       accepted_frame_size: 6
     }
 
-    inputs = [%{name: :main, spec: spec}]
+    specs = [primary: spec]
 
-    assert {:ok, mixer} = VideoMixer.init(:single_fit, inputs, spec)
+    assert {:ok, mixer} = VideoMixer.init(:single_fit, specs, spec)
 
     frame = %Frame{data: <<0::48>>, size: 6, pts: 0}
 
-    assert {:ok, output} = VideoMixer.mix(mixer, main: frame)
+    assert {:ok, output} = VideoMixer.mix(mixer, primary: frame)
     assert byte_size(output) == 6
   end
 
@@ -57,12 +57,9 @@ defmodule VideoMixer.NativeIntegrationTest do
     right_spec = %FrameSpec{left_spec | accepted_frame_size: 6}
     out_spec = %FrameSpec{left_spec | width: 4, accepted_frame_size: 12}
 
-    inputs = [
-      %{name: :left, spec: left_spec},
-      %{name: :right, spec: right_spec}
-    ]
+    specs = [left: left_spec, right: right_spec]
 
-    assert {:ok, mixer} = VideoMixer.init(:hstack, inputs, out_spec)
+    assert {:ok, mixer} = VideoMixer.init(:hstack, specs, out_spec)
 
     left = i420_frame(2, 2, 10, 90, 100)
     right = i420_frame(2, 2, 200, 160, 170)
@@ -88,12 +85,9 @@ defmodule VideoMixer.NativeIntegrationTest do
     bottom_spec = %FrameSpec{top_spec | accepted_frame_size: 6}
     out_spec = %FrameSpec{top_spec | height: 4, accepted_frame_size: 12}
 
-    inputs = [
-      %{name: :top, spec: top_spec},
-      %{name: :bottom, spec: bottom_spec}
-    ]
+    specs = [top: top_spec, bottom: bottom_spec]
 
-    assert {:ok, mixer} = VideoMixer.init(:vstack, inputs, out_spec)
+    assert {:ok, mixer} = VideoMixer.init(:vstack, specs, out_spec)
 
     top = i420_frame(2, 2, 10, 20, 30)
     bottom = i420_frame(2, 2, 200, 210, 220)
@@ -118,21 +112,22 @@ defmodule VideoMixer.NativeIntegrationTest do
 
     out_spec = %FrameSpec{base_spec | width: 4, height: 4, accepted_frame_size: 24}
 
-    inputs = [
-      %{name: :a, spec: base_spec},
-      %{name: :b, spec: base_spec},
-      %{name: :c, spec: base_spec},
-      %{name: :d, spec: base_spec}
+    specs = [
+      top_left: base_spec,
+      top_right: base_spec,
+      bottom_left: base_spec,
+      bottom_right: base_spec
     ]
 
-    assert {:ok, mixer} = VideoMixer.init(:xstack, inputs, out_spec)
+    assert {:ok, mixer} = VideoMixer.init(:xstack, specs, out_spec)
 
     a = i420_frame(2, 2, 10, 20, 30)
     b = i420_frame(2, 2, 60, 70, 80)
     c = i420_frame(2, 2, 120, 130, 140)
     d = i420_frame(2, 2, 200, 210, 220)
 
-    assert {:ok, output} = VideoMixer.mix(mixer, a: a, b: b, c: c, d: d)
+    assert {:ok, output} =
+             VideoMixer.mix(mixer, top_left: a, top_right: b, bottom_left: c, bottom_right: d)
     assert byte_size(output) == 24
 
     {y_plane, u_plane, v_plane} = split_i420(output, 4, 4)
@@ -165,12 +160,9 @@ defmodule VideoMixer.NativeIntegrationTest do
 
     out_spec = %FrameSpec{left_spec | width: 6, height: 2, accepted_frame_size: 18}
 
-    inputs = [
-      %{name: :primary, spec: left_spec},
-      %{name: :sidebar, spec: right_spec}
-    ]
+    specs = [primary: left_spec, sidebar: right_spec]
 
-    assert {:ok, mixer} = VideoMixer.init(:primary_sidebar, inputs, out_spec, sidebar: :sidebar)
+    assert {:ok, mixer} = VideoMixer.init(:primary_sidebar, specs, out_spec)
 
     left = i420_frame(4, 2, 10, 20, 30)
     right = i420_frame(2, 2, 200, 210, 220)
@@ -212,13 +204,13 @@ defmodule VideoMixer.NativeIntegrationTest do
 
     out_spec = %FrameSpec{spec | accepted_frame_size: 6}
 
-    inputs = [%{name: :main, spec: spec}]
+    specs = [primary: spec]
 
-    assert {:ok, mixer} = VideoMixer.init(:single_fit, inputs, out_spec)
+    assert {:ok, mixer} = VideoMixer.init(:single_fit, specs, out_spec)
 
     frame = %Frame{data: <<0>>, size: 1, pts: 0}
 
     assert {:error, %Error{context: :native_mix, reason: :input_payload_size_mismatch}} =
-             VideoMixer.mix(mixer, main: frame)
+             VideoMixer.mix(mixer, primary: frame)
   end
 end

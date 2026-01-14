@@ -18,7 +18,6 @@ defmodule VideoMixer do
   # receive.
   @type spec_mapping_t :: [FrameSpec.t()]
   @type input_name :: atom()
-  @type input_def :: %{name: input_name(), spec: FrameSpec.t()}
 
   @type t :: %__MODULE__{
           mapping: spec_mapping_t(),
@@ -31,12 +30,12 @@ defmodule VideoMixer do
   @doc """
   Initializes the mixer using a constrained layout with safe defaults.
   """
-  @spec init(FilterGraph.layout(), [input_def()], FrameSpec.t(), keyword()) ::
+  @spec init(FilterGraph.layout(), keyword(FrameSpec.t()) | map(), FrameSpec.t(), keyword()) ::
           {:ok, t()} | {:error, Error.t()}
-  def init(layout, inputs, output_frame_spec, opts \\ []) do
+  def init(layout, specs_by_role, output_frame_spec, opts \\ []) do
     with {:ok, %{graph: filter_graph, filter_indexes: filter_indexes, input_order: input_order,
                 mapping: mapping}} <-
-           FilterGraph.build(layout, inputs, output_frame_spec, opts) do
+           FilterGraph.build(layout, specs_by_role, output_frame_spec, opts) do
       init_raw({filter_graph, filter_indexes}, mapping, input_order, output_frame_spec)
     end
   end

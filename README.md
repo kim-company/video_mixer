@@ -16,27 +16,33 @@ VideoMixer provides a safe, layout-driven filter graph generator. Inputs are nam
 to avoid index mistakes, and `mix/2` expects a keyword list keyed by those names.
 
 ```elixir
-inputs = [
-  %{name: :primary, spec: primary_spec},
-  %{name: :sidebar, spec: sidebar_spec}
+specs = [
+  primary: primary_spec,
+  sidebar: sidebar_spec
 ]
 
-{:ok, mixer} = VideoMixer.init(:primary_sidebar, inputs, out_spec, sidebar: :sidebar)
+{:ok, mixer} = VideoMixer.init(:primary_sidebar, specs, out_spec)
 
 {:ok, output} = VideoMixer.mix(mixer, primary: primary_frame, sidebar: sidebar_frame)
 ```
 
 ### Supported Layouts
-- `:single_fit` (single input scaled/padded to output)
-- `:hstack` (2 inputs side-by-side)
-- `:vstack` (2 inputs top/bottom)
-- `:xstack` (4 inputs in a 2x2 grid)
-- `:primary_sidebar` (primary input dominant, secondary input on the side)
+- `:single_fit` (roles: `primary`)
+- `:hstack` (roles: `left`, `right`)
+- `:vstack` (roles: `top`, `bottom`)
+- `:xstack` (roles: `top_left`, `top_right`, `bottom_left`, `bottom_right`)
+- `:primary_sidebar` (roles: `primary`, `sidebar`)
+
+### Role Reference
+Use these role keys for both specs and frames:
+- `:single_fit` → `primary`
+- `:hstack` → `left`, `right`
+- `:vstack` → `top`, `bottom`
+- `:xstack` → `top_left`, `top_right`, `bottom_left`, `bottom_right`
+- `:primary_sidebar` → `primary`, `sidebar`
 
 ### Layout Options
 - `pixel_format` (defaults to `:I420`)
-- `sidebar` (required for `:primary_sidebar`; name of the secondary input)
-- `primary` (optional; defaults to the first input name)
 
 `primary_sidebar` is intended for layouts where the main content should dominate
 and a secondary feed (like a sign interpreter or thumbnail speaker) sits on the side.

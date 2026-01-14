@@ -9,76 +9,82 @@ defmodule VideoMixer.FilterGraph do
           | :xstack
           | :primary_sidebar
 
-  @type input_def :: %{name: atom(), spec: FrameSpec.t()}
+  @type role ::
+          :primary
+          | :sidebar
+          | :left
+          | :right
+          | :top
+          | :bottom
+          | :top_left
+          | :top_right
+          | :bottom_left
+          | :bottom_right
 
-  @spec build(layout(), [input_def()], FrameSpec.t() | map(), keyword()) ::
+  @spec build(layout(), keyword(FrameSpec.t()) | map(), FrameSpec.t() | map(), keyword()) ::
           {:ok,
            %{
              graph: String.t(),
              filter_indexes: [non_neg_integer()],
-             input_order: [atom()],
+             input_order: [role()],
              mapping: [FrameSpec.t()]
            }}
           | {:error, Error.t()}
-  def build(layout, inputs, output_spec, opts \\ []) do
-    with :ok <- validate_inputs(inputs),
+  def build(layout, specs_by_role, output_spec, opts \\ []) do
+    with {:ok, specs_by_role} <- normalize_specs(specs_by_role),
          {:ok, output_dims} <- output_dims(output_spec),
          {:ok, pixel_format} <- pixel_format(output_spec, opts),
-         :ok <- validate_specs(inputs, pixel_format) do
-      input_order = Enum.map(inputs, & &1.name)
-      mapping = Enum.map(inputs, & &1.spec)
+         {:ok, role_order} <- role_order(layout),
+         :ok <- validate_roles(specs_by_role, role_order),
+         :ok <- validate_specs(specs_by_role, pixel_format) do
+      mapping = Enum.map(role_order, &Map.fetch!(specs_by_role, &1))
 
-      do_build(layout, inputs, output_dims, pixel_format, opts, input_order, mapping)
+      do_build(layout, output_dims, role_order, mapping)
     end
   end
 
-  defp do_build(:single_fit, inputs, output_dims, _pixel_format, _opts, input_order, mapping) do
-    with :ok <- require_input_count(inputs, 1, :single_fit) do
-      graph = single_fit_graph(output_dims)
+  defp do_build(:single_fit, output_dims, role_order, mapping) do
+    graph = single_fit_graph(output_dims)
 
-      {:ok,
-       %{
-         graph: graph,
-         filter_indexes: [0],
-         input_order: input_order,
-         mapping: mapping
-       }}
-    end
+    {:ok,
+     %{
+       graph: graph,
+       filter_indexes: [0],
+       input_order: role_order,
+       mapping: mapping
+     }}
   end
 
-  defp do_build(:hstack, inputs, output_dims, _pixel_format, _opts, input_order, mapping) do
-    with :ok <- require_input_count(inputs, 2, :hstack),
-         {:ok, tile_width} <- even_div(output_dims.width, 2, :output_width) do
+  defp do_build(:hstack, output_dims, role_order, mapping) do
+    with {:ok, tile_width} <- even_div(output_dims.width, 2, :output_width) do
       graph = hstack_graph(output_dims, tile_width)
 
       {:ok,
        %{
          graph: graph,
          filter_indexes: [0, 1],
-         input_order: input_order,
+         input_order: role_order,
          mapping: mapping
        }}
     end
   end
 
-  defp do_build(:vstack, inputs, output_dims, _pixel_format, _opts, input_order, mapping) do
-    with :ok <- require_input_count(inputs, 2, :vstack),
-         {:ok, tile_height} <- even_div(output_dims.height, 2, :output_height) do
+  defp do_build(:vstack, output_dims, role_order, mapping) do
+    with {:ok, tile_height} <- even_div(output_dims.height, 2, :output_height) do
       graph = vstack_graph(output_dims, tile_height)
 
       {:ok,
        %{
          graph: graph,
          filter_indexes: [0, 1],
-         input_order: input_order,
+         input_order: role_order,
          mapping: mapping
        }}
     end
   end
 
-  defp do_build(:xstack, inputs, output_dims, _pixel_format, _opts, input_order, mapping) do
-    with :ok <- require_input_count(inputs, 4, :xstack),
-         {:ok, tile_width} <- even_div(output_dims.width, 2, :output_width),
+  defp do_build(:xstack, output_dims, role_order, mapping) do
+    with {:ok, tile_width} <- even_div(output_dims.width, 2, :output_width),
          {:ok, tile_height} <- even_div(output_dims.height, 2, :output_height) do
       graph = xstack_graph(tile_width, tile_height)
 
@@ -86,77 +92,51 @@ defmodule VideoMixer.FilterGraph do
        %{
          graph: graph,
          filter_indexes: [0, 1, 2, 3],
-         input_order: input_order,
+         input_order: role_order,
          mapping: mapping
        }}
     end
   end
 
-  defp do_build(:primary_sidebar, _inputs, output_dims, _pixel_format, opts, input_order, mapping) do
-    sidebar_name = Keyword.get(opts, :sidebar)
-    primary_name = Keyword.get(opts, :primary, hd(input_order))
+  defp do_build(:primary_sidebar, output_dims, role_order, mapping) do
+    with {:ok, %{left_width: left_width, right_width: right_width}} <-
+           primary_sidebar_dimensions(output_dims) do
+      graph = primary_sidebar_graph(output_dims, left_width, right_width)
 
-    sidebar_idx = if sidebar_name, do: Enum.find_index(input_order, &(&1 == sidebar_name))
-    primary_idx = Enum.find_index(input_order, &(&1 == primary_name))
-
-    cond do
-      is_nil(primary_idx) ->
-        {:error, Error.new(:filter_graph, :unknown_primary_input, %{primary: primary_name})}
-
-      is_nil(sidebar_name) or is_nil(sidebar_idx) ->
-        graph = single_fit_graph(output_dims)
-
-        {:ok,
-         %{
-           graph: graph,
-           filter_indexes: [primary_idx],
-           input_order: input_order,
-           mapping: mapping
-         }}
-
-      sidebar_idx == primary_idx ->
-        {:error, Error.new(:filter_graph, :sidebar_equals_primary, %{sidebar: sidebar_name})}
-
-      true ->
-        with {:ok, %{left_width: left_width, right_width: right_width}} <-
-               primary_sidebar_dimensions(output_dims) do
-          graph = primary_sidebar_graph(output_dims, left_width, right_width)
-
-          {:ok,
-           %{
-             graph: graph,
-             filter_indexes: [primary_idx, sidebar_idx],
-             input_order: input_order,
-             mapping: mapping
-           }}
-        end
+      {:ok,
+       %{
+         graph: graph,
+         filter_indexes: [0, 1],
+         input_order: role_order,
+         mapping: mapping
+       }}
     end
   end
 
-  defp do_build(other, _inputs, _output_dims, _pixel_format, _opts, _input_order, _mapping) do
+  defp do_build(other, _output_dims, _role_order, _mapping) do
     {:error, Error.new(:filter_graph, :unsupported_layout, %{layout: other})}
   end
 
-  defp validate_inputs(inputs) when is_list(inputs) and inputs != [] do
-    names = Enum.map(inputs, & &1.name)
+  defp normalize_specs(specs_by_role) when is_map(specs_by_role) do
+    {:ok, specs_by_role}
+  end
 
-    cond do
-      Enum.any?(inputs, &(!is_atom(&1.name))) ->
-        {:error, Error.new(:filter_graph, :invalid_input_name)}
+  defp normalize_specs(specs_by_role) when is_list(specs_by_role) do
+    if Keyword.keyword?(specs_by_role) do
+      keys = Keyword.keys(specs_by_role)
 
-      Enum.any?(names, &is_nil/1) ->
-        {:error, Error.new(:filter_graph, :invalid_input_name)}
-
-      length(Enum.uniq(names)) != length(names) ->
-        {:error, Error.new(:filter_graph, :duplicate_input_names, %{names: names})}
-
-      true ->
-        :ok
+      if length(keys) != length(Enum.uniq(keys)) do
+        {:error, Error.new(:filter_graph, :duplicate_roles, %{roles: keys})}
+      else
+        {:ok, Map.new(specs_by_role)}
+      end
+    else
+      {:error, Error.new(:filter_graph, :invalid_specs)}
     end
   end
 
-  defp validate_inputs(_inputs) do
-    {:error, Error.new(:filter_graph, :invalid_inputs)}
+  defp normalize_specs(_specs_by_role) do
+    {:error, Error.new(:filter_graph, :invalid_specs)}
   end
 
   defp output_dims(%FrameSpec{width: width, height: height}) do
@@ -165,16 +145,19 @@ defmodule VideoMixer.FilterGraph do
 
   defp output_dims(%{width: width, height: height})
        when is_integer(width) and width > 0 and is_integer(height) and height > 0 do
-    {:ok, %{width: width, height: height}}
+    if rem(width, 2) == 0 and rem(height, 2) == 0 do
+      {:ok, %{width: width, height: height}}
+    else
+      {:error, Error.new(:filter_graph, :invalid_output_dimensions)}
+    end
   end
 
   defp output_dims(_output_spec) do
     {:error, Error.new(:filter_graph, :invalid_output_dimensions)}
   end
 
-  defp pixel_format(%FrameSpec{pixel_format: pixel_format}, opts) do
-    pixel_format(%{pixel_format: pixel_format}, opts)
-  end
+  defp pixel_format(%FrameSpec{pixel_format: pixel_format}, opts),
+    do: pixel_format(%{pixel_format: pixel_format}, opts)
 
   defp pixel_format(%{pixel_format: pixel_format}, opts) when is_atom(pixel_format) do
     requested = Keyword.get(opts, :pixel_format, :I420)
@@ -194,15 +177,15 @@ defmodule VideoMixer.FilterGraph do
     {:ok, Keyword.get(opts, :pixel_format, :I420)}
   end
 
-  defp validate_specs(inputs, pixel_format) do
+  defp validate_specs(specs_by_role, pixel_format) do
     invalid =
-      Enum.find(inputs, fn %{spec: spec} ->
-        not valid_spec?(spec, pixel_format)
-      end)
+      Enum.find(specs_by_role, fn {_role, spec} -> not valid_spec?(spec, pixel_format) end)
 
     if invalid do
+      {role, spec} = invalid
+
       {:error,
-       Error.new(:filter_graph, :invalid_input_spec, %{input: invalid.name, spec: invalid.spec})}
+       Error.new(:filter_graph, :invalid_input_spec, %{role: role, spec: spec})}
     else
       :ok
     end
@@ -216,16 +199,27 @@ defmodule VideoMixer.FilterGraph do
 
   defp valid_spec?(_spec, _pixel_format), do: false
 
-  defp require_input_count(inputs, count, layout) do
-    if length(inputs) == count do
-      :ok
-    else
-      {:error,
-       Error.new(:filter_graph, :invalid_input_count, %{
-         layout: layout,
-         expected: count,
-         got: length(inputs)
-       })}
+  defp role_order(:single_fit), do: {:ok, [:primary]}
+  defp role_order(:hstack), do: {:ok, [:left, :right]}
+  defp role_order(:vstack), do: {:ok, [:top, :bottom]}
+  defp role_order(:xstack), do: {:ok, [:top_left, :top_right, :bottom_left, :bottom_right]}
+  defp role_order(:primary_sidebar), do: {:ok, [:primary, :sidebar]}
+  defp role_order(layout), do: {:error, Error.new(:filter_graph, :unsupported_layout, %{layout: layout})}
+
+  defp validate_roles(specs_by_role, role_order) do
+    roles = Map.keys(specs_by_role)
+    missing = role_order -- roles
+    extra = roles -- role_order
+
+    cond do
+      missing != [] ->
+        {:error, Error.new(:filter_graph, :missing_roles, %{missing: missing})}
+
+      extra != [] ->
+        {:error, Error.new(:filter_graph, :unexpected_roles, %{unexpected: extra})}
+
+      true ->
+        :ok
     end
   end
 
