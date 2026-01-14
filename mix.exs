@@ -29,7 +29,8 @@ defmodule VideoMixer.MixProject do
   defp deps do
     [
       {:unifex, "~> 1.0"},
-      {:telemetry, "~> 1.1"}
+      {:telemetry, "~> 1.1"},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end
 
