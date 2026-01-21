@@ -1,12 +1,15 @@
 defmodule VideoMixer.FrameSpec do
+  @type fit_mode :: :crop | :fit
+
   @type t :: %__MODULE__{
           reference: any(),
           width: pos_integer(),
           height: pos_integer(),
           pixel_format: atom(),
-          accepted_frame_size: integer()
+          accepted_frame_size: integer(),
+          fit_mode: fit_mode()
         }
-  defstruct [:reference, :width, :height, :pixel_format, :accepted_frame_size]
+  defstruct [:reference, :width, :height, :pixel_format, :accepted_frame_size, fit_mode: :crop]
 
   @doc "Returns true if `frame` is compatible with the provided specification."
   @spec compatible?(t(), VideoMixer.Frame.t()) :: boolean()

@@ -44,7 +44,8 @@ defmodule VideoMixer.FilterGraph do
   end
 
   defp do_build(:single_fit, output_dims, role_order, mapping) do
-    graph = single_fit_graph(output_dims)
+    fit_modes = extract_fit_modes(mapping, role_order)
+    graph = single_fit_graph(output_dims, fit_modes)
 
     {:ok,
      %{
@@ -56,52 +57,48 @@ defmodule VideoMixer.FilterGraph do
   end
 
   defp do_build(:hstack, output_dims, role_order, mapping) do
-    with {:ok, tile_width} <- even_div(output_dims.width, 2, :output_width) do
-      graph = hstack_graph(output_dims, tile_width)
+    fit_modes = extract_fit_modes(mapping, role_order)
+    graph = hstack_graph(output_dims, fit_modes)
 
-      {:ok,
-       %{
-         graph: graph,
-         filter_indexes: [0, 1],
-         input_order: role_order,
-         mapping: mapping
-       }}
-    end
+    {:ok,
+     %{
+       graph: graph,
+       filter_indexes: [0, 1],
+       input_order: role_order,
+       mapping: mapping
+     }}
   end
 
   defp do_build(:vstack, output_dims, role_order, mapping) do
-    with {:ok, tile_height} <- even_div(output_dims.height, 2, :output_height) do
-      graph = vstack_graph(output_dims, tile_height)
+    fit_modes = extract_fit_modes(mapping, role_order)
+    graph = vstack_graph(output_dims, fit_modes)
 
-      {:ok,
-       %{
-         graph: graph,
-         filter_indexes: [0, 1],
-         input_order: role_order,
-         mapping: mapping
-       }}
-    end
+    {:ok,
+     %{
+       graph: graph,
+       filter_indexes: [0, 1],
+       input_order: role_order,
+       mapping: mapping
+     }}
   end
 
   defp do_build(:xstack, output_dims, role_order, mapping) do
-    with {:ok, tile_width} <- even_div(output_dims.width, 2, :output_width),
-         {:ok, tile_height} <- even_div(output_dims.height, 2, :output_height) do
-      graph = xstack_graph(tile_width, tile_height)
+    fit_modes = extract_fit_modes(mapping, role_order)
+    graph = xstack_graph(output_dims, fit_modes)
 
-      {:ok,
-       %{
-         graph: graph,
-         filter_indexes: [0, 1, 2, 3],
-         input_order: role_order,
-         mapping: mapping
-       }}
-    end
+    {:ok,
+     %{
+       graph: graph,
+       filter_indexes: [0, 1, 2, 3],
+       input_order: role_order,
+       mapping: mapping
+     }}
   end
 
   defp do_build(:primary_sidebar, output_dims, role_order, mapping) do
-    with {:ok, %{left_width: left_width, right_width: right_width}} <-
-           primary_sidebar_dimensions(output_dims) do
-      graph = primary_sidebar_graph(output_dims, left_width, right_width)
+    with {:ok, dims} <- primary_sidebar_dimensions(output_dims) do
+      fit_modes = extract_fit_modes(mapping, role_order)
+      graph = primary_sidebar_graph(dims, fit_modes)
 
       {:ok,
        %{
@@ -145,11 +142,7 @@ defmodule VideoMixer.FilterGraph do
 
   defp output_dims(%{width: width, height: height})
        when is_integer(width) and width > 0 and is_integer(height) and height > 0 do
-    if rem(width, 2) == 0 and rem(height, 2) == 0 do
-      {:ok, %{width: width, height: height}}
-    else
-      {:error, Error.new(:filter_graph, :invalid_output_dimensions)}
-    end
+    {:ok, %{width: width, height: height}}
   end
 
   defp output_dims(_output_spec) do
@@ -223,93 +216,66 @@ defmodule VideoMixer.FilterGraph do
     end
   end
 
-  defp even_div(value, divisor, label) do
-    if rem(value, divisor) == 0 do
-      {:ok, div(value, divisor)}
-    else
-      {:error,
-       Error.new(:filter_graph, :invalid_output_dimension, %{
-         dimension: label,
-         value: value
-       })}
+  defp extract_fit_modes(mapping, role_order) do
+    role_order
+    |> Enum.zip(mapping)
+    |> Map.new(fn {role, spec} -> {role, Map.get(spec, :fit_mode, :crop)} end)
+  end
+
+  defp scale_filter_chain(width, height, fit_mode) do
+    case fit_mode do
+      :crop ->
+        "scale=#{width}:#{height}:force_original_aspect_ratio=increase,setsar=1,crop=#{width}:#{height}"
+
+      :fit ->
+        "scale=#{width}:#{height}:force_original_aspect_ratio=decrease,pad=#{width}:#{height}:-1:-1,setsar=1"
     end
   end
 
-  defp single_fit_graph(%{width: ow, height: oh}) do
-    "[0:v]scale=#{ow}:#{oh}:force_original_aspect_ratio=decrease," <>
-      "pad=#{ow}:#{oh}:-1:-1,setsar=1[out]"
+  defp single_fit_graph(%{width: ow, height: oh}, fit_modes) do
+    fit_mode = fit_modes[:primary] || :crop
+    "[0:v]#{scale_filter_chain(ow, oh, fit_mode)}[out]"
   end
 
-  defp hstack_graph(%{height: oh}, tile_width) do
+  defp hstack_graph(%{width: ow, height: oh}, fit_modes) do
     [
-      "[0:v]scale=#{tile_width}:#{oh}:force_original_aspect_ratio=decrease," <>
-        "pad=#{tile_width}:#{oh}:-1:-1,setsar=1[l]",
-      "[1:v]scale=#{tile_width}:#{oh}:force_original_aspect_ratio=decrease," <>
-        "pad=#{tile_width}:#{oh}:-1:-1,setsar=1[r]",
-      "[l][r]hstack=inputs=2[out]"
+      "[0:v]#{scale_filter_chain("#{ow}/2", oh, fit_modes[:left] || :crop)}[l]",
+      "[1:v]#{scale_filter_chain("#{ow}/2", oh, fit_modes[:right] || :crop)}[r]",
+      "[l][r]hstack=inputs=2,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
   end
 
-  defp vstack_graph(%{width: ow}, tile_height) do
+  defp vstack_graph(%{width: ow, height: oh}, fit_modes) do
     [
-      "[0:v]scale=#{ow}:#{tile_height}:force_original_aspect_ratio=decrease," <>
-        "pad=#{ow}:#{tile_height}:-1:-1,setsar=1[t]",
-      "[1:v]scale=#{ow}:#{tile_height}:force_original_aspect_ratio=decrease," <>
-        "pad=#{ow}:#{tile_height}:-1:-1,setsar=1[b]",
-      "[t][b]vstack=inputs=2[out]"
+      "[0:v]#{scale_filter_chain(ow, "#{oh}/2", fit_modes[:top] || :crop)}[t]",
+      "[1:v]#{scale_filter_chain(ow, "#{oh}/2", fit_modes[:bottom] || :crop)}[b]",
+      "[t][b]vstack=inputs=2,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
   end
 
-  defp xstack_graph(tile_width, tile_height) do
+  defp xstack_graph(%{width: ow, height: oh}, fit_modes) do
     [
-      "[0:v]scale=#{tile_width}:#{tile_height}:force_original_aspect_ratio=decrease," <>
-        "pad=#{tile_width}:#{tile_height}:-1:-1,setsar=1[a]",
-      "[1:v]scale=#{tile_width}:#{tile_height}:force_original_aspect_ratio=decrease," <>
-        "pad=#{tile_width}:#{tile_height}:-1:-1,setsar=1[b]",
-      "[2:v]scale=#{tile_width}:#{tile_height}:force_original_aspect_ratio=decrease," <>
-        "pad=#{tile_width}:#{tile_height}:-1:-1,setsar=1[c]",
-      "[3:v]scale=#{tile_width}:#{tile_height}:force_original_aspect_ratio=decrease," <>
-        "pad=#{tile_width}:#{tile_height}:-1:-1,setsar=1[d]",
-      "[a][b][c][d]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[out]"
+      "[0:v]#{scale_filter_chain("#{ow}/2", "#{oh}/2", fit_modes[:top_left] || :crop)}[a]",
+      "[1:v]#{scale_filter_chain("#{ow}/2", "#{oh}/2", fit_modes[:top_right] || :crop)}[b]",
+      "[2:v]#{scale_filter_chain("#{ow}/2", "#{oh}/2", fit_modes[:bottom_left] || :crop)}[c]",
+      "[3:v]#{scale_filter_chain("#{ow}/2", "#{oh}/2", fit_modes[:bottom_right] || :crop)}[d]",
+      "[a][b][c][d]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
   end
 
-  defp primary_sidebar_graph(%{height: oh}, left_width, right_width) do
+  defp primary_sidebar_graph(%{width: ow, height: oh}, fit_modes) do
     [
-      "[0:v]scale=#{left_width}:#{oh}:force_original_aspect_ratio=decrease," <>
-        "pad=#{left_width}:#{oh}:-1:-1,setsar=1[l]",
-      "[1:v]scale=#{right_width}:#{oh}:force_original_aspect_ratio=decrease," <>
-        "pad=#{right_width}:#{oh}:-1:-1,setsar=1[r]",
-      "[l][r]hstack=inputs=2[out]"
+      "[0:v]#{scale_filter_chain("#{ow}/3*2", oh, fit_modes[:primary] || :crop)}[l]",
+      "[1:v]#{scale_filter_chain("#{ow}/3", oh, fit_modes[:sidebar] || :crop)}[r]",
+      "[l][r]hstack=inputs=2,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
   end
 
   defp primary_sidebar_dimensions(%{width: ow, height: oh}) do
-    cond do
-      rem(ow, 2) != 0 or rem(oh, 2) != 0 ->
-        {:error,
-         Error.new(:filter_graph, :invalid_output_dimension, %{
-           dimension: :output_size,
-           value: {ow, oh}
-         })}
-
-      true ->
-        left_width = div(ow * 2, 3)
-        right_width = ow - left_width
-
-        if rem(left_width, 2) == 0 and rem(right_width, 2) == 0 do
-          {:ok, %{left_width: left_width, right_width: right_width}}
-        else
-          {:error,
-           Error.new(:filter_graph, :invalid_output_dimension, %{
-           dimension: :primary_sidebar_widths,
-           value: {left_width, right_width}
-         })}
-        end
-    end
+    {:ok, %{width: ow, height: oh}}
   end
 end
