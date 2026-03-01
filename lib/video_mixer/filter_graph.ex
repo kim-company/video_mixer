@@ -238,42 +238,55 @@ defmodule VideoMixer.FilterGraph do
   end
 
   defp hstack_graph(%{width: ow, height: oh}, fit_modes) do
+    half_w = round_even(div(ow, 2))
+
     [
-      "[0:v]#{scale_filter_chain("#{ow}/2", oh, fit_modes[:left] || :crop)}[l]",
-      "[1:v]#{scale_filter_chain("#{ow}/2", oh, fit_modes[:right] || :crop)}[r]",
+      "[0:v]#{scale_filter_chain(half_w, oh, fit_modes[:left] || :crop)}[l]",
+      "[1:v]#{scale_filter_chain(half_w, oh, fit_modes[:right] || :crop)}[r]",
       "[l][r]hstack=inputs=2,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
   end
 
   defp vstack_graph(%{width: ow, height: oh}, fit_modes) do
+    half_h = round_even(div(oh, 2))
+
     [
-      "[0:v]#{scale_filter_chain(ow, "#{oh}/2", fit_modes[:top] || :crop)}[t]",
-      "[1:v]#{scale_filter_chain(ow, "#{oh}/2", fit_modes[:bottom] || :crop)}[b]",
+      "[0:v]#{scale_filter_chain(ow, half_h, fit_modes[:top] || :crop)}[t]",
+      "[1:v]#{scale_filter_chain(ow, half_h, fit_modes[:bottom] || :crop)}[b]",
       "[t][b]vstack=inputs=2,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
   end
 
   defp xstack_graph(%{width: ow, height: oh}, fit_modes) do
+    half_w = round_even(div(ow, 2))
+    half_h = round_even(div(oh, 2))
+
     [
-      "[0:v]#{scale_filter_chain("#{ow}/2", "#{oh}/2", fit_modes[:top_left] || :crop)}[a]",
-      "[1:v]#{scale_filter_chain("#{ow}/2", "#{oh}/2", fit_modes[:top_right] || :crop)}[b]",
-      "[2:v]#{scale_filter_chain("#{ow}/2", "#{oh}/2", fit_modes[:bottom_left] || :crop)}[c]",
-      "[3:v]#{scale_filter_chain("#{ow}/2", "#{oh}/2", fit_modes[:bottom_right] || :crop)}[d]",
+      "[0:v]#{scale_filter_chain(half_w, half_h, fit_modes[:top_left] || :crop)}[a]",
+      "[1:v]#{scale_filter_chain(half_w, half_h, fit_modes[:top_right] || :crop)}[b]",
+      "[2:v]#{scale_filter_chain(half_w, half_h, fit_modes[:bottom_left] || :crop)}[c]",
+      "[3:v]#{scale_filter_chain(half_w, half_h, fit_modes[:bottom_right] || :crop)}[d]",
       "[a][b][c][d]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
   end
 
   defp primary_sidebar_graph(%{width: ow, height: oh}, fit_modes) do
+    primary_w = round_even(div(ow, 3) * 2)
+    sidebar_w = round_even(ow - primary_w)
+
     [
-      "[0:v]#{scale_filter_chain("#{ow}/3*2", oh, fit_modes[:primary] || :crop)}[l]",
-      "[1:v]#{scale_filter_chain("#{ow}/3", oh, fit_modes[:sidebar] || :crop)}[r]",
+      "[0:v]#{scale_filter_chain(primary_w, oh, fit_modes[:primary] || :crop)}[l]",
+      "[1:v]#{scale_filter_chain(sidebar_w, oh, fit_modes[:sidebar] || :crop)}[r]",
       "[l][r]hstack=inputs=2,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
   end
+
+  defp round_even(n) when rem(n, 2) == 0, do: n
+  defp round_even(n), do: n + 1
 
   defp primary_sidebar_dimensions(%{width: ow, height: oh}) do
     {:ok, %{width: ow, height: oh}}
