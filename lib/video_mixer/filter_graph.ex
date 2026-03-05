@@ -8,6 +8,7 @@ defmodule VideoMixer.FilterGraph do
           | :vstack
           | :xstack
           | :primary_sidebar
+          | :primary_sidebar_cropped
 
   @type role ::
           :primary
@@ -110,6 +111,21 @@ defmodule VideoMixer.FilterGraph do
     end
   end
 
+  defp do_build(:primary_sidebar_cropped, output_dims, role_order, mapping) do
+    with {:ok, dims} <- primary_sidebar_dimensions(output_dims) do
+      fit_modes = extract_fit_modes(mapping, role_order)
+      graph = primary_sidebar_cropped_graph(dims, fit_modes)
+
+      {:ok,
+       %{
+         graph: graph,
+         filter_indexes: [0, 1],
+         input_order: role_order,
+         mapping: mapping
+       }}
+    end
+  end
+
   defp do_build(other, _output_dims, _role_order, _mapping) do
     {:error, Error.new(:filter_graph, :unsupported_layout, %{layout: other})}
   end
@@ -197,6 +213,7 @@ defmodule VideoMixer.FilterGraph do
   defp role_order(:vstack), do: {:ok, [:top, :bottom]}
   defp role_order(:xstack), do: {:ok, [:top_left, :top_right, :bottom_left, :bottom_right]}
   defp role_order(:primary_sidebar), do: {:ok, [:primary, :sidebar]}
+  defp role_order(:primary_sidebar_cropped), do: {:ok, [:primary, :sidebar]}
   defp role_order(layout), do: {:error, Error.new(:filter_graph, :unsupported_layout, %{layout: layout})}
 
   defp validate_roles(specs_by_role, role_order) do
@@ -280,6 +297,19 @@ defmodule VideoMixer.FilterGraph do
     [
       "[0:v]#{scale_filter_chain(primary_w, oh, fit_modes[:primary] || :crop)}[l]",
       "[1:v]#{scale_filter_chain(sidebar_w, oh, fit_modes[:sidebar] || :crop)}[r]",
+      "[l][r]hstack=inputs=2,scale=#{ow}:#{oh}[out]"
+    ]
+    |> Enum.join(";")
+  end
+
+  defp primary_sidebar_cropped_graph(%{width: ow, height: oh}, fit_modes) do
+    primary_w = round_even(div(ow, 3) * 2)
+    sidebar_w = round_even(ow - primary_w)
+    sidebar_active_h = round_even(div(oh, 3) * 2)
+
+    [
+      "[0:v]#{scale_filter_chain(primary_w, oh, fit_modes[:primary] || :fit)}[l]",
+      "[1:v]scale=-1:#{sidebar_active_h},crop=#{sidebar_w}:ih,pad=#{sidebar_w}:#{oh}:-1:-1,setsar=1[r]",
       "[l][r]hstack=inputs=2,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
