@@ -1,7 +1,7 @@
 defmodule VideoMixer.MixProject do
   use Mix.Project
 
-  @version "2.1.1"
+  @version "2.1.2"
   @link "https://github.com/kim-company/video_mixer"
 
   def project do
