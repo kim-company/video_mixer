@@ -101,6 +101,22 @@ defmodule VideoMixer.FrameQueue do
     :queue.is_empty(ready) and stream_finished?
   end
 
+  @doc """
+  Drops all but the most recent entry from the ready queue.
+
+  Returns the queue unchanged when empty or containing a single frame.
+  Preserves `current_spec`, `received_first_frame?`, `stream_finished?`,
+  and all other invariants — only the ready queue is trimmed.
+  """
+  def flush_to_latest(%__MODULE__{ready: ready} = state) do
+    case :queue.len(ready) do
+      n when n <= 1 -> state
+      _n ->
+        {{:value, latest}, _} = :queue.out_r(ready)
+        %{state | ready: :queue.from_list([latest])}
+    end
+  end
+
   def pop!(state = %__MODULE__{ready: ready}) do
     case :queue.out(ready) do
       {{:value, value}, ready} ->
