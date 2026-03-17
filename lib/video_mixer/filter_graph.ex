@@ -302,14 +302,24 @@ defmodule VideoMixer.FilterGraph do
     |> Enum.join(";")
   end
 
-  defp primary_sidebar_cropped_graph(%{width: ow, height: oh}, fit_modes) do
+  defp primary_sidebar_cropped_graph(%{width: ow, height: oh}, _fit_modes) do
     primary_w = round_even(div(ow, 3) * 2)
     sidebar_w = round_even(ow - primary_w)
-    sidebar_active_h = round_even(div(oh, 3) * 2)
+
+    # Compute the fitted primary content height.  Since the mixer's output spec
+    # equals the primary input spec (ow×oh), fitting into primary_w×oh is always
+    # width-limited (primary_w < ow).  We derive content_h from primary_w/ow so
+    # that both halves share the *exact same* content height and therefore the
+    # *exact same* vertical padding — guaranteeing pixel-perfect alignment.
+    #
+    # Previously the sidebar used an independent `round_even(oh * 2/3)` which
+    # could diverge from ffmpeg's `force_original_aspect_ratio=decrease` rounding
+    # by up to 2 px (e.g. 1280×720 → primary 478 px vs sidebar 480 px).
+    content_h = round_even(div(oh * primary_w, ow))
 
     [
-      "[0:v]#{scale_filter_chain(primary_w, oh, fit_modes[:primary] || :fit)}[l]",
-      "[1:v]scale=-1:#{sidebar_active_h},crop=#{sidebar_w}:ih,pad=#{sidebar_w}:#{oh}:-1:-1,setsar=1[r]",
+      "[0:v]scale=#{primary_w}:#{content_h},pad=#{primary_w}:#{oh}:-1:-1,setsar=1[l]",
+      "[1:v]scale=-1:#{content_h},crop=#{sidebar_w}:ih,pad=#{sidebar_w}:#{oh}:-1:-1,setsar=1[r]",
       "[l][r]hstack=inputs=2,scale=#{ow}:#{oh}[out]"
     ]
     |> Enum.join(";")
