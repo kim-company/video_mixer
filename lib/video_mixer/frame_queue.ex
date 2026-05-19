@@ -62,12 +62,12 @@ defmodule VideoMixer.FrameQueue do
 
   def push(state = %__MODULE__{needs_spec_before_next_frame: true}, frame = %Frame{}) do
     raise Error,
-          context: :frame_queue_shadowing,
-          reason: :pending_frames_left_behind,
-          details: %{
-            pending_count: :queue.len(state.pending),
-            frame: frame
-          }
+      context: :frame_queue_shadowing,
+      reason: :pending_frames_left_behind,
+      details: %{
+        pending_count: :queue.len(state.pending),
+        frame: frame
+      }
   end
 
   def push(state = %__MODULE__{current_spec: spec}, frame = %Frame{}) do
@@ -110,7 +110,9 @@ defmodule VideoMixer.FrameQueue do
   """
   def flush_to_latest(%__MODULE__{ready: ready} = state) do
     case :queue.len(ready) do
-      n when n <= 1 -> state
+      n when n <= 1 ->
+        state
+
       _n ->
         {{:value, latest}, _} = :queue.out_r(ready)
         %{state | ready: :queue.from_list([latest])}
@@ -124,18 +126,21 @@ defmodule VideoMixer.FrameQueue do
 
       {:empty, _ready} ->
         raise Error,
-              context: :frame_queue_empty,
-              reason: :empty_ready_queue
+          context: :frame_queue_empty,
+          reason: :empty_ready_queue
     end
   end
 
   defp push_compatible(state, spec, frame) do
     ready =
-      :queue.in(%{
-        frame: frame,
-        spec: spec,
-        spec_changed?: state.spec_changed?
-      }, state.ready)
+      :queue.in(
+        %{
+          frame: frame,
+          spec: spec,
+          spec_changed?: state.spec_changed?
+        },
+        state.ready
+      )
 
     %{state | ready: ready, spec_changed?: false, received_first_frame?: true}
   end

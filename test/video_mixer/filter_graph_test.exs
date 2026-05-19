@@ -83,7 +83,11 @@ defmodule VideoMixer.FilterGraphTest do
     output = frame_spec(1920, 1080)
 
     assert {:error, error} =
-             FilterGraph.build(:primary_sidebar_cropped, %{primary: frame_spec(1280, 720)}, output)
+             FilterGraph.build(
+               :primary_sidebar_cropped,
+               %{primary: frame_spec(1280, 720)},
+               output
+             )
 
     assert error.context == :filter_graph
     assert error.reason == :missing_roles

@@ -183,6 +183,14 @@ static int get_pixel_format(char *fmt_name)
     {
         pix_fmt = AV_PIX_FMT_YUV444P;
     }
+    else if (strcmp(fmt_name, "RGBA") == 0)
+    {
+        pix_fmt = AV_PIX_FMT_RGBA;
+    }
+    else if (strcmp(fmt_name, "BGRA") == 0)
+    {
+        pix_fmt = AV_PIX_FMT_BGRA;
+    }
     return pix_fmt;
 }
 static int init_filters(const char *filters, State *state)

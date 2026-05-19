@@ -193,8 +193,7 @@ defmodule VideoMixer.FilterGraph do
     if invalid do
       {role, spec} = invalid
 
-      {:error,
-       Error.new(:filter_graph, :invalid_input_spec, %{role: role, spec: spec})}
+      {:error, Error.new(:filter_graph, :invalid_input_spec, %{role: role, spec: spec})}
     else
       :ok
     end
@@ -214,7 +213,9 @@ defmodule VideoMixer.FilterGraph do
   defp role_order(:xstack), do: {:ok, [:top_left, :top_right, :bottom_left, :bottom_right]}
   defp role_order(:primary_sidebar), do: {:ok, [:primary, :sidebar]}
   defp role_order(:primary_sidebar_cropped), do: {:ok, [:primary, :sidebar]}
-  defp role_order(layout), do: {:error, Error.new(:filter_graph, :unsupported_layout, %{layout: layout})}
+
+  defp role_order(layout),
+    do: {:error, Error.new(:filter_graph, :unsupported_layout, %{layout: layout})}
 
   defp validate_roles(specs_by_role, role_order) do
     roles = Map.keys(specs_by_role)

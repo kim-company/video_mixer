@@ -33,8 +33,13 @@ defmodule VideoMixer do
   @spec init(FilterGraph.layout(), keyword(FrameSpec.t()) | map(), FrameSpec.t(), keyword()) ::
           {:ok, t()} | {:error, Error.t()}
   def init(layout, specs_by_role, output_frame_spec, opts \\ []) do
-    with {:ok, %{graph: filter_graph, filter_indexes: filter_indexes, input_order: input_order,
-                mapping: mapping}} <-
+    with {:ok,
+          %{
+            graph: filter_graph,
+            filter_indexes: filter_indexes,
+            input_order: input_order,
+            mapping: mapping
+          }} <-
            FilterGraph.build(layout, specs_by_role, output_frame_spec, opts) do
       init_raw({filter_graph, filter_indexes}, mapping, input_order, output_frame_spec)
     end
@@ -42,6 +47,27 @@ defmodule VideoMixer do
 
   @doc """
   Initializes the mixer with a custom filter graph.
+
+  ## Filter graph gotchas
+
+    * Each input becomes a buffersrc labelled `[i:v]` (0-indexed in `input_order`).
+      The terminal pad must be labelled `[out]`.
+
+    * Input buffersrcs are configured with `time_base=1/1`, i.e. PTS is in seconds.
+      Time-driven filters such as `fade=st=…:d=…` will interpret PTS in seconds,
+      which rarely matches the upstream timing. Pre-bake animations into the
+      input frames instead of relying on time-based filters.
+
+    * Some filters parse their `format` option as an enum alias rather than as a
+      pixel-format string. The `overlay` filter is the canonical example: use
+      `overlay=...:format=yuv420` (enum), not `format=yuv420p` (pix_fmt string).
+      `format` *as a standalone filter* (e.g. `[1:v]format=yuva420p[ovl]`) does
+      take pix_fmt strings.
+
+    * Supported input/output `pixel_format` values are `:I420`, `:I422`, `:I444`,
+      `:RGBA`, and `:BGRA`. RGBA/BGRA are useful as overlay sources with alpha;
+      convert to a YUV planar format inside the graph (e.g. `format=yuva420p`)
+      before feeding `overlay`.
   """
   @spec init_raw(filter_graph_t(), spec_mapping_t(), [input_name()], FrameSpec.t()) ::
           {:ok, t()} | {:error, Error.t()}
@@ -74,8 +100,15 @@ defmodule VideoMixer do
   end
 
   @spec mix(t(), keyword(Frame.t()) | map()) :: {:ok, binary()} | {:error, Error.t()}
-  def mix(%__MODULE__{ref: ref, mapping: mapping, filter_indexes: filter_indexes,
-                      input_order: input_order}, frames_by_name) do
+  def mix(
+        %__MODULE__{
+          ref: ref,
+          mapping: mapping,
+          filter_indexes: filter_indexes,
+          input_order: input_order
+        },
+        frames_by_name
+      ) do
     with {:ok, frames} <- normalize_frames(frames_by_name, input_order),
          :ok <- assert_spec_compatibility(mapping, frames, 0) do
       frames
