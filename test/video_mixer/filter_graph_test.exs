@@ -93,6 +93,55 @@ defmodule VideoMixer.FilterGraphTest do
     assert error.reason == :missing_roles
   end
 
+  describe "layout_graph/4" do
+    test "returns the build/3 graph verbatim when no terminal_label is given" do
+      spec = frame_spec(64, 48)
+      {:ok, %{graph: built}} = FilterGraph.build(:single_fit, %{primary: spec}, spec)
+      assert {:ok, ^built} = FilterGraph.layout_graph(:single_fit, %{primary: spec}, spec)
+    end
+
+    test "renames the terminal label so the graph can be chained" do
+      spec = frame_spec(64, 48)
+
+      assert {:ok, graph} =
+               FilterGraph.layout_graph(:single_fit, %{primary: spec}, spec,
+                 terminal_label: "base"
+               )
+
+      assert String.ends_with?(graph, "[base]")
+      refute String.contains?(graph, "[out]")
+    end
+
+    test "works for multi-step layouts and keeps intermediate labels intact" do
+      out = frame_spec(1920, 1080)
+
+      specs = %{
+        primary: frame_spec(1280, 720, fit_mode: :fit),
+        sidebar: frame_spec(720, 1280, fit_mode: :crop)
+      }
+
+      assert {:ok, graph} =
+               FilterGraph.layout_graph(:primary_sidebar_cropped, specs, out,
+                 terminal_label: "base"
+               )
+
+      assert String.ends_with?(graph, "[base]")
+      assert String.contains?(graph, "[l]")
+      assert String.contains?(graph, "[r]")
+      refute String.contains?(graph, "[out]")
+    end
+
+    test "propagates build/3 errors" do
+      spec = frame_spec(1920, 1080)
+      bad = %FrameSpec{spec | pixel_format: :RGBA}
+
+      assert {:error, error} =
+               FilterGraph.layout_graph(:single_fit, %{primary: bad}, spec)
+
+      assert error.context == :filter_graph
+    end
+  end
+
   defp frame_spec(width, height, opts \\ []) do
     %FrameSpec{
       width: width,

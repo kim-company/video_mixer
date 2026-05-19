@@ -44,6 +44,38 @@ defmodule VideoMixer.FilterGraph do
     end
   end
 
+  @doc """
+  Returns just the filter-graph string for a named layout, with the terminal
+  output label renamed if `:terminal_label` is provided. Useful when chaining
+  the layout's output into a larger graph — e.g. layering an image overlay on
+  top of the layout's result.
+
+  Defaults to `[out]` (matching `build/3`).
+
+  ## Examples
+
+      {:ok, body} = FilterGraph.layout_graph(:single_fit, %{primary: spec}, out, terminal_label: "base")
+      full = "\#{body};[1:v]format=yuva420p,scale=W:H[ovl];[base][ovl]overlay=...[out]"
+  """
+  @spec layout_graph(layout(), keyword(FrameSpec.t()) | map(), FrameSpec.t() | map(), keyword()) ::
+          {:ok, String.t()} | {:error, Error.t()}
+  def layout_graph(layout, specs_by_role, output_spec, opts \\ []) do
+    terminal_label = Keyword.get(opts, :terminal_label, "out")
+    build_opts = Keyword.delete(opts, :terminal_label)
+
+    with {:ok, %{graph: graph}} <- build(layout, specs_by_role, output_spec, build_opts) do
+      {:ok, rename_terminal(graph, terminal_label)}
+    end
+  end
+
+  defp rename_terminal(graph, "out"), do: graph
+
+  defp rename_terminal(graph, label) when is_binary(label) do
+    # Each layout body ends in a single "[out]" terminal label. Replace once
+    # to be safe against any future intermediate label collisions.
+    String.replace(graph, "[out]", "[" <> label <> "]", global: false)
+  end
+
   defp do_build(:single_fit, output_dims, role_order, mapping) do
     fit_modes = extract_fit_modes(mapping, role_order)
     graph = single_fit_graph(output_dims, fit_modes)
