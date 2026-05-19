@@ -27,3 +27,4 @@ video_mixer-*.tar
 
 # Elixir LSP
 /.elixir_ls
+.dexter*
